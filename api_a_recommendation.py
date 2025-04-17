@@ -1,44 +1,58 @@
-# api_a_recommendation.py
 from flask import Flask, jsonify
 import requests
-from functools import lru_cache
+import redis
+import json
 
 app = Flask(__name__)
 
-# Simples cache com LRU para armazenar as últimas 32 cidades consultadas
-@lru_cache(maxsize=32)
-def get_weather_from_api_b(city):
-    try:
-        response = requests.get(f'http://localhost:5001/weather/{city}')
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return None
-    except requests.RequestException:
-        return None
+# Configura conexão com o Redis (localhost, porta padrão)
+cache = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
+# Tempo de vida do cache (em segundos)
+CACHE_TTL = 60
+
+API_B_URL = 'http://localhost:5001/weather/'
 
 @app.route('/recommendation/<city>', methods=['GET'])
 def get_recommendation(city):
-    weather = get_weather_from_api_b(city)
-    
-    if not weather:
-        return jsonify({"error": "Não foi possível obter dados da cidade"}), 404
+    city_key = city.lower()
 
-    temp = weather["temp"]
+    # Verifica se a cidade está no cache Redis
+    cached_data = cache.get(city_key)
+    if cached_data:
+        return jsonify(json.loads(cached_data))
 
-    if temp > 30:
-        recommendation = "Está muito quente! Beba bastante água e use protetor solar."
-    elif 15 < temp <= 30:
-        recommendation = "O clima está agradável. Aproveite o dia!"
-    else:
-        recommendation = "Está frio! Não esqueça de usar um casaco."
+    # Consulta API B
+    try:
+        response = requests.get(f"{API_B_URL}{city}")
+        if response.status_code != 200:
+            return jsonify({"error": "Cidade não encontrada na API B"}), 404
 
-    return jsonify({
-        "city": weather["city"],
-        "temperature": weather["temp"],
-        "unit": weather["unit"],
-        "recommendation": recommendation
-    })
+        weather = response.json()
+        temp = weather["temp"]
+
+        # Gera a recomendação
+        if temp > 30:
+            recommendation = "Está muito quente! Hidrate-se e use protetor solar."
+        elif 15 < temp <= 30:
+            recommendation = "O clima está agradável. Aproveite o dia!"
+        else:
+            recommendation = "Está frio! Vista um casaco."
+
+        result = {
+            "city": weather["city"],
+            "temp": temp,
+            "unit": weather["unit"],
+            "recommendation": recommendation
+        }
+
+        # Armazena no Redis com tempo de expiração
+        cache.setex(city_key, CACHE_TTL, json.dumps(result))
+
+        return jsonify(result)
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": "Erro ao acessar API B", "details": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5000)

@@ -1,27 +1,26 @@
-# api_b_weather.py
 from flask import Flask, jsonify
 
 app = Flask(__name__)
 
-# Simulando um "banco de dados" simples de temperaturas por cidade
-weather_data = {
-    "SãoPaulo": 25,
-    "RioDeJaneiro": 33,
-    "Curitiba": 12,
-    "Salvador": 28
+# Dados mockados de temperatura por cidade
+mocked_weather_data = {
+    "SãoPaulo": {"temp": 25, "unit": "Celsius"},
+    "RioDeJaneiro": {"temp": 34, "unit": "Celsius"},
+    "Curitiba": {"temp": 12, "unit": "Celsius"},
+    "Fortaleza": {"temp": 30, "unit": "Celsius"}
 }
 
 @app.route('/weather/<city>', methods=['GET'])
 def get_weather(city):
-    temp = weather_data.get(city)
-    if temp is not None:
+    city_data = mocked_weather_data.get(city)
+    if city_data:
         return jsonify({
-            "city": city,
-            "temp": temp,
-            "unit": "Celsius"
+            "city": city.replace("_", " "),
+            "temp": city_data["temp"],
+            "unit": city_data["unit"]
         })
     else:
         return jsonify({"error": "Cidade não encontrada"}), 404
 
 if __name__ == '__main__':
-    app.run(port=5001)
+    app.run(port=5001)  # Porta diferente para API B
